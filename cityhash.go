@@ -22,6 +22,10 @@ func rotate(val uint64, shift uint) uint64 {
 	}
 }
 
+func rotateByAtLeast1(val uint64, shift uint) uint64 {
+	return (val >> shift) | (val << (64 - shift))
+}
+
 func weakHashLen32WithSeeds(w uint64, x uint64, y uint64, z uint64, a uint64, b uint64) Uint128 {
 	a += w
 	b = rotate(b+a+z, 21)
@@ -36,7 +40,24 @@ func shiftMix(val uint64) uint64 {
 }
 
 func hashLen0to16(s []byte) uint64 {
-	return 0
+	if len(s)>8 {
+		a:=fetch64(s)
+		b:=fetch64(s[len(s)-8:])
+		return hashLen16(Uint128{a,rotateByAtLeast1(b+uint64(len(s)), uint(len(s)))})^b;
+	}
+	if len(s)>=4{
+		a:=fetch32(s)
+		return hashLen16(Uint128{uint64(len(s))+(uint64(a)<<3),uint64(fetch32(s[len(s)-4:]))})
+	}
+	if len(s)>0 {
+		a:=s[0]
+		b:=s[len(s)>>1]
+		c:=s[len(s)-1]
+		y:=uint64(a)+(uint64(b)<<8)
+		z:=uint64(len(s))+(uint64(c)<<8)
+		return shiftMix(y*k2^z*k3)*k2;
+	}
+	return k2;
 }
 
 func cityMurmur(s []byte, seed Uint128) Uint128 {
@@ -77,6 +98,8 @@ func cityHash128WithSeed(s []byte, seed Uint128) Uint128 {
 	if len(s) < 128 {
 		return cityMurmur(s, seed)
 	}
+	l:=len(s)
+	offset:=0
 	x := seed.First
 	y := seed.Second
 	z := uint64(len(s)) * k1
@@ -85,29 +108,29 @@ func cityHash128WithSeed(s []byte, seed Uint128) Uint128 {
 	v.Second = rotate(v.First, 42)*k1 + fetch64(s[8:])
 	w.First = rotate(y+z, 35)*k1 + x
 	w.Second = rotate(x+fetch64(s[88:]), 53) * k1
-	for len(s) > 128 {
+	for l > 128 {
 		for i := 0; i < 2; i++ {
-			x = rotate(x+y+v.First+fetch64(s[16:]), 37) * k1
-			y = rotate(y+v.Second+fetch64(s[48:]), 42) * k1
+			x = rotate(x+y+v.First+fetch64(s[offset+16:]), 37) * k1
+			y = rotate(y+v.Second+fetch64(s[offset+48:]), 42) * k1
 			x ^= w.Second
 			y ^= v.First
 			z = rotate(z^w.First, 33)
-			v = weakHashLen32WithSeeds(fetch64(s), fetch64(s[8:]), fetch64(s[16:]), fetch64(s[24:]), v.Second*k1, x+w.First)
-			w = weakHashLen32WithSeeds(fetch64(s[32:]), fetch64(s[40:]), fetch64(s[48:]), fetch64(s[56:]), z+w.Second, y)
+			v = weakHashLen32WithSeeds(fetch64(s[offset:]), fetch64(s[8+offset:]), fetch64(s[16+offset:]), fetch64(s[24+offset:]), v.Second*k1, x+w.First)
+			w = weakHashLen32WithSeeds(fetch64(s[32+offset:]), fetch64(s[40+offset:]), fetch64(s[48+offset:]), fetch64(s[56+offset:]), z+w.Second, y)
 			z, x = x, z
-			s = s[64:]
+			offset+=64
 		}
+		l-=128
 	}
 	y += rotate(w.First, 37)*k0 + z
 	x += rotate(v.First+z, 49) * k0
-	if len(s) > 32 {
-		for tailDone := 32; tailDone < len(s); tailDone += 32 {
-			y = rotate(y-x, 42)*k0 + v.Second
-			w.First += fetch64(s[len(s)-tailDone+16:])
-			x = rotate(x, 49)*k0 + w.First
-			w.First += v.First
-			v = weakHashLen32WithSeeds(fetch64(s[len(s)-tailDone:]), fetch64(s[len(s)-tailDone+8:]), fetch64(s[len(s)-tailDone+16:]), fetch64(s[len(s)-tailDone+24:]), v.First, v.Second)
-		}
+	for tailDone := 0; tailDone < l; {
+		tailDone += 32
+		y = rotate(y-x, 42)*k0 + v.Second
+		w.First += fetch64(s[offset+l-tailDone+16:])
+		x = rotate(x, 49)*k0 + w.First
+		w.First += v.First
+		v = weakHashLen32WithSeeds(fetch64(s[offset+l-tailDone:]), fetch64(s[offset+l-tailDone+8:]), fetch64(s[offset+l-tailDone+16:]), fetch64(s[offset+l-tailDone+24:]), v.First, v.Second)
 	}
 	x = hashLen16(Uint128{x, v.First})
 	y = hashLen16(Uint128{y, w.First})
@@ -127,6 +150,10 @@ func hashLen16(x Uint128) uint64 {
 
 func fetch64(d []byte) uint64 {
 	return binary.LittleEndian.Uint64(d)
+}
+
+func fetch32(d []byte) uint32 {
+	return binary.LittleEndian.Uint32(d)
 }
 
 func CityHash128(s []byte) Uint128 {
