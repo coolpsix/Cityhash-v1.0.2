@@ -24,11 +24,11 @@ void setup() {
 
 int main(int argc, char **argv) {
 	setup();
-	std::cout << "var expected []Uint128 = []Uint128{" << std::endl;
+	std::cout << "var expected = []Uint128{" << std::endl;
 	for(int i = 0; i < kTestSize -1; i++) {
 		int offset = i*i;
 		int len = i;
-		auto result = CityHash_v1_0_2::CityHash128(data, i);
+		auto result = CityHash_v1_0_2::CityHash128(data + offset, i);
 		std::cout << "\tUint128{First: " << result.first << ", Second: " << result.second << "},";
 		std::cout << "\t// iteration=" << i << " offset=" << offset << " len=" << len << std::endl;
 	}
